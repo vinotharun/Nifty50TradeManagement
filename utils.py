@@ -162,15 +162,37 @@ def calculate_return_percentage(entry_price: float, exit_price: float) -> float:
 def get_atm_strike(spot_price: float, strike_interval: int = 50) -> int:
     """
     Calculate ATM (At-The-Money) strike price.
-    
+
     Args:
         spot_price: Current spot price of Nifty
         strike_interval: Strike interval (default 50 for Nifty)
-        
+
     Returns:
         ATM strike price
     """
     return round(spot_price / strike_interval) * strike_interval
+
+
+def get_itm_strike(spot_price: float, option_type: str, strike_interval: int = 50) -> int:
+    """
+    Calculate ITM (In-The-Money) strike price - 1 strike in the money.
+
+    Args:
+        spot_price: Current spot price of Nifty
+        option_type: 'CALL' or 'PUT'
+        strike_interval: Strike interval (default 50 for Nifty)
+
+    Returns:
+        ITM strike price
+    """
+    atm_strike = get_atm_strike(spot_price, strike_interval)
+
+    if option_type == 'CALL':
+        # For CALL: 1 strike below ATM
+        return atm_strike - strike_interval
+    else:  # PUT
+        # For PUT: 1 strike above ATM
+        return atm_strike + strike_interval
 
 
 def determine_lot_size(risk_points: float) -> int:

@@ -1,6 +1,13 @@
 # NIFTY50 Algorithmic Trading System
 
+![Version](https://img.shields.io/badge/version-4.1-blue.svg)
+![Python](https://img.shields.io/badge/python-3.8+-green.svg)
+![License](https://img.shields.io/badge/license-MIT-orange.svg)
+![Status](https://img.shields.io/badge/status-production--ready-success.svg)
+
 A production-ready, fully automated trading system for NIFTY50 index options using a breakout-based strategy with Zerodha's Kite Connect API.
+
+**Latest: v4.1** - Production-ready with thread safety, risk controls, and comprehensive documentation.
 
 ## 📋 Table of Contents
 
@@ -127,11 +134,12 @@ On first run, the system will:
    - Example: Press ENTER at 10:30:15 → Entry Candle = 10:30:00 to 10:31:00
 
 2. **Entry Candle**: Wait for the candle to close at the next minute boundary
-   - System records the High and Low of the candle from all ticks received
+   - System fetches complete candle data using Historical Data API
+   - Records the High and Low of the entire candle (including before ENTER was pressed)
 
 3. **Breakout Monitoring**: System watches for price breakout
-   - **Breakout Above High** → Buy ATM Call Option
-   - **Breakout Below Low** → Buy ATM Put Option
+   - **Breakout Above High** → Buy ITM Call Option (1 strike below spot)
+   - **Breakout Below Low** → Buy ITM Put Option (1 strike above spot)
 
 4. **Position Active**: Real-time dashboard shows:
    - Current P&L
@@ -161,8 +169,13 @@ On first run, the system will:
 ```
 Entry Candle: [High: 22,550 | Low: 22,530]
 
-CALL Trigger: Spot Price > 22,550 → Buy ATM Call
-PUT Trigger: Spot Price < 22,530 → Buy ATM Put
+CALL Trigger: Spot Price > 22,550
+  → Buy ITM Call (1 strike below spot)
+  → Example: Spot = 22,551 → Strike = 22,500 CE
+
+PUT Trigger: Spot Price < 22,530
+  → Buy ITM Put (1 strike above spot)
+  → Example: Spot = 22,529 → Strike = 22,550 PE
 ```
 
 ### Position Sizing (Based on Risk Points)

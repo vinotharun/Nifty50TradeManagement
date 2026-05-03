@@ -80,10 +80,75 @@ class Dashboard:
         console.print()
     
     @staticmethod
+    def show_breakout_monitoring(
+        direction: str,
+        entry_candle_high: float,
+        entry_candle_low: float,
+        entry_candle_start,
+        entry_candle_end,
+        current_price: Optional[float] = None
+    ):
+        """
+        Display breakout monitoring dashboard.
+
+        Args:
+            direction: 'CALL' or 'PUT'
+            entry_candle_high: Entry candle high
+            entry_candle_low: Entry candle low
+            entry_candle_start: Entry candle start time
+            entry_candle_end: Entry candle end time
+            current_price: Current NIFTY price
+        """
+        Dashboard.clear_screen()
+
+        # Header
+        direction_style = "bold green" if direction == "CALL" else "bold red"
+        header = Panel(
+            Text(f"MONITORING {direction} BREAKOUT", justify="center", style=direction_style),
+            style="bold white on blue"
+        )
+        console.print(header)
+        console.print()
+
+        # Entry candle info
+        candle_text = f"Entry Candle ({entry_candle_start.strftime('%H:%M:%S')} - {entry_candle_end.strftime('%H:%M:%S')}):"
+        console.print(candle_text, style="bold cyan")
+        console.print(f"  High: {entry_candle_high:,.2f}", style="green")
+        console.print(f"  Low:  {entry_candle_low:,.2f}", style="red")
+        console.print()
+
+        # Direction and trigger
+        console.print(f"Direction: {direction}", style=direction_style)
+
+        if direction == "CALL":
+            trigger_text = f"Breakout Trigger: Price > {entry_candle_high:,.2f}"
+            trigger_style = "bold green"
+        else:
+            trigger_text = f"Breakout Trigger: Price < {entry_candle_low:,.2f}"
+            trigger_style = "bold red"
+
+        console.print(trigger_text, style=trigger_style)
+
+        if current_price:
+            console.print(f"Current NIFTY: {current_price:,.2f}", style="bold yellow")
+
+        console.print()
+        console.print("⏳ Waiting for breakout...", style="cyan")
+        console.print()
+
+        # Cancellation instruction
+        cancel_panel = Panel(
+            "[bold yellow]Type 'Q' and press ENTER to cancel monitoring[/bold yellow]",
+            border_style="yellow",
+            padding=(0, 1)
+        )
+        console.print(cancel_panel)
+
+    @staticmethod
     def show_breakout(direction: str, spot_price: float, trigger_level: float):
         """
         Display breakout notification.
-        
+
         Args:
             direction: 'CALL' or 'PUT'
             spot_price: Current spot price
@@ -161,11 +226,12 @@ class Dashboard:
         
         console.print(table)
         console.print()
-        
+
         # Instructions
         instructions = Panel(
-            "[bold cyan]Press 'M' to modify Stop Loss | Press 'Q' to force exit[/bold cyan]",
-            border_style="yellow"
+            "[bold cyan]'M' + ENTER: Modify Stop Loss | 'T' + ENTER: Modify Target | 'Q' + ENTER: Force Exit[/bold cyan]",
+            border_style="yellow",
+            padding=(0, 1)
         )
         console.print(instructions)
     

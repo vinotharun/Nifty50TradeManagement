@@ -22,7 +22,12 @@ class Config:
     
     # Trading Parameters
     NIFTY_LOT_SIZE = int(os.getenv('NIFTY_LOT_SIZE', '65'))
-    
+
+    # Capital Limits
+    MIN_CAPITAL = 100000  # Minimum capital: ₹1,00,000
+    MAX_CAPITAL = 100000000  # Maximum capital: ₹10,00,00,000 (10 crores)
+    MAX_LOTS_PER_ORDER = 100  # Maximum lots in a single order (risk control)
+
     # Market Hours (IST)
     MARKET_START_TIME = time(9, 15, 0)  # 9:15 AM
     MARKET_END_TIME = time(15, 30, 0)   # 3:30 PM
@@ -48,6 +53,7 @@ class Config:
     # API Retry Configuration
     API_MAX_RETRIES = 3
     API_RETRY_DELAY = 1  # seconds
+    API_TIMEOUT = 30  # seconds - timeout for all API calls
     
     # Instrument Tokens
     # Optional: Set manually if auto-detection fails (run debug_instruments.py to find)

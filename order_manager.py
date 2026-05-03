@@ -110,44 +110,71 @@ class OrderManager:
     
     def find_option_instrument(self, spot_price: float, option_type: str, expiry_date: Optional[str] = None) -> Dict:
         """
-        Find the appropriate option instrument.
-        
+        Find the appropriate ITM (In-The-Money) option instrument.
+
         Args:
             spot_price: Current NIFTY spot price
             option_type: 'CE' for Call or 'PE' for Put
             expiry_date: Optional specific expiry date (YYYY-MM-DD format)
-            
+
         Returns:
             Instrument details dictionary
         """
         try:
-            # Calculate ATM strike
-            atm_strike = get_atm_strike(spot_price)
-            logger.info(f"ATM Strike: {atm_strike} for spot price: {spot_price}")
-            
+            from utils import get_itm_strike
+
+            # Determine option direction for ITM calculation
+            direction = 'CALL' if option_type == 'CE' else 'PUT'
+
+            # Calculate ITM strike (1 strike in the money)
+            itm_strike = get_itm_strike(spot_price, direction)
+            logger.info(f"ITM Strike: {itm_strike} for spot price: {spot_price} ({direction})")
+
             # Get all NFO instruments
             instruments = self.kite.instruments("NFO")
-            
+
             # Filter NIFTY options
             nifty_options = [
                 inst for inst in instruments
-                if inst['name'] == 'NIFTY' 
+                if inst['name'] == 'NIFTY'
                 and inst['instrument_type'] == option_type
-                and inst['strike'] == atm_strike
+                and inst['strike'] == itm_strike
             ]
-            
+
             if not nifty_options:
-                raise Exception(f"No {option_type} options found for strike {atm_strike}")
-            
-            # Sort by expiry and get nearest
+                raise Exception(f"No {option_type} options found for strike {itm_strike}")
+
+            # Sort by expiry
             nifty_options.sort(key=lambda x: x['expiry'])
-            nearest_option = nifty_options[0]
-            
-            logger.info(f"Selected option: {nearest_option['tradingsymbol']} "
-                       f"(Strike: {nearest_option['strike']}, Expiry: {nearest_option['expiry']})")
-            
-            return nearest_option
-            
+
+            # Get today's date in IST
+            from utils import get_ist_now
+            today = get_ist_now().date()
+
+            # Skip today's expiry if it exists, go to next expiry
+            selected_option = None
+            for option in nifty_options:
+                option_expiry_date = option['expiry'].date()
+
+                # Skip if expiry is today
+                if option_expiry_date == today:
+                    logger.info(f"Skipping same-day expiry: {option['tradingsymbol']} (Expiry: {option['expiry']})")
+                    continue
+
+                # Select the first non-today expiry
+                selected_option = option
+                break
+
+            # Fallback: if all options expire today (unlikely), use the nearest anyway
+            if selected_option is None:
+                logger.warning("All available options expire today. Using nearest expiry as fallback.")
+                selected_option = nifty_options[0]
+
+            logger.info(f"Selected ITM option: {selected_option['tradingsymbol']} "
+                       f"(Strike: {selected_option['strike']}, Expiry: {selected_option['expiry']})")
+
+            return selected_option
+
         except Exception as e:
             logger.error(f"Failed to find option instrument: {e}")
             raise

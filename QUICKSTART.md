@@ -101,15 +101,15 @@ Press ENTER → Wait 1 min → Breakout → Auto Trade → Monitor → Auto Exit
             → Start monitoring for breakout
 
 10:31:30 AM - NIFTY=22,551 (Breakout above High!)
-            → System finds ATM Call: 22550CE
+            → System finds ITM Call: 22500CE (1 strike below spot)
             → Checks margin: ✓ OK
             → Places buy order: 2 lots (130 units)
-            → Order filled at ₹150
-            → SL: ₹142 | Target: ₹166
+            → Order filled at ₹180 (ITM options cost more)
+            → SL: ₹170 | Target: ₹200
 
-10:45:00 AM - Price hits ₹166 (Target!)
-            → Auto-exit at ₹166
-            → P&L: ₹2,080 profit
+10:45:00 AM - Price hits ₹200 (Target!)
+            → Auto-exit at ₹200
+            → P&L: ₹2,600 profit
             → Trade logged to journal
 
 Press ENTER to return to IDLE state
