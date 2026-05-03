@@ -1,0 +1,18 @@
+# Latest tested versions (as of May 2026)
+# Use this file if you want specific versions that are known to work
+
+# Kite Connect API
+kiteconnect==5.2.0
+
+# Environment variable management
+python-dotenv==1.0.1
+
+# Terminal UI
+rich==13.7.1
+
+# Data handling
+pandas==2.2.2
+openpyxl==3.1.2
+
+# Date and time utilities
+pytz==2024.1

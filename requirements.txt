@@ -1,0 +1,15 @@
+# Kite Connect API (latest version as of 2026)
+kiteconnect>=4.0.0,<6.0.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Terminal UI
+rich>=13.0.0
+
+# Data handling
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# Date and time utilities
+pytz>=2023.3
