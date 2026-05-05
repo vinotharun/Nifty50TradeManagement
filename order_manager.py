@@ -154,7 +154,12 @@ class OrderManager:
             # Skip today's expiry if it exists, go to next expiry
             selected_option = None
             for option in nifty_options:
-                option_expiry_date = option['expiry'].date()
+                # Handle both datetime.datetime and datetime.date objects
+                option_expiry = option['expiry']
+                if hasattr(option_expiry, 'date'):
+                    option_expiry_date = option_expiry.date()  # datetime.datetime object
+                else:
+                    option_expiry_date = option_expiry  # Already datetime.date object
 
                 # Skip if expiry is today
                 if option_expiry_date == today:
@@ -218,17 +223,32 @@ class OrderManager:
     
     def place_order(self, trading_symbol: str, quantity: int, transaction_type: str = "BUY") -> Optional[str]:
         """
-        Place a market order.
-        
+        Place a limit order at best price (market-like execution).
+        Uses limit order to comply with Zerodha API restrictions.
+
         Args:
             trading_symbol: Trading symbol
             quantity: Order quantity
             transaction_type: BUY or SELL
-            
+
         Returns:
             Order ID if successful, None otherwise
         """
         try:
+            # Get current LTP (Last Traded Price)
+            quote = self.kite.quote(f"NFO:{trading_symbol}")
+            ltp = quote[f"NFO:{trading_symbol}"]["last_price"]
+
+            # Add buffer for immediate execution
+            # BUY: Add 2% to ensure order fills immediately
+            # SELL: Subtract 2% to ensure order fills immediately
+            if transaction_type == self.kite.TRANSACTION_TYPE_BUY:
+                limit_price = round(ltp * 1.02, 1)  # 2% above LTP
+            else:  # SELL
+                limit_price = round(ltp * 0.98, 1)  # 2% below LTP
+
+            logger.info(f"Placing limit order: {transaction_type} {quantity} {trading_symbol} @ ₹{limit_price} (LTP: ₹{ltp})")
+
             order_id = self.kite.place_order(
                 variety=self.kite.VARIETY_REGULAR,
                 exchange=self.kite.EXCHANGE_NFO,
@@ -236,12 +256,13 @@ class OrderManager:
                 transaction_type=transaction_type,
                 quantity=quantity,
                 product=self.kite.PRODUCT_MIS,
-                order_type=self.kite.ORDER_TYPE_MARKET
+                order_type=self.kite.ORDER_TYPE_LIMIT,
+                price=limit_price
             )
-            
-            logger.info(f"Order placed successfully: {order_id} - {transaction_type} {quantity} {trading_symbol}")
+
+            logger.info(f"Order placed successfully: {order_id} - {transaction_type} {quantity} {trading_symbol} @ ₹{limit_price}")
             return order_id
-            
+
         except Exception as e:
             logger.error(f"Order placement failed: {e}")
             raise

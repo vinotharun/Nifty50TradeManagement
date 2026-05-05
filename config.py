@@ -53,7 +53,7 @@ class Config:
     # API Retry Configuration
     API_MAX_RETRIES = 3
     API_RETRY_DELAY = 1  # seconds
-    API_TIMEOUT = 30  # seconds - timeout for all API calls
+    API_TIMEOUT = 30  # seconds - Note: KiteConnect library handles timeout internally
     
     # Instrument Tokens
     # Optional: Set manually if auto-detection fails (run debug_instruments.py to find)

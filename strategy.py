@@ -195,8 +195,7 @@ class Strategy:
                 instrument_token=self.nifty_token,
                 from_date=from_date,
                 to_date=to_date,
-                interval='minute',
-                timeout=Config.API_TIMEOUT
+                interval='minute'
             )
 
             if historical_data and len(historical_data) > 0:
@@ -208,14 +207,33 @@ class Strategy:
                 print(f"✓ Entry Candle: High = {self.entry_candle_high:,.2f} | Low = {self.entry_candle_low:,.2f}")
                 return True
             else:
-                logger.warning("No historical data returned, using WebSocket tick data as fallback")
-                print("⚠️  Historical data unavailable, using tick data")
-                # Fallback would go here if needed
-                return False
+                logger.warning("No historical data returned, attempting fallback to WebSocket tick data")
+                print("⚠️  Historical data unavailable, trying fallback...")
+                return self._use_websocket_fallback()
 
         except Exception as e:
             logger.error(f"Error fetching historical data: {e}")
             print(f"✗ Error fetching historical data: {e}")
+            logger.info("Attempting WebSocket fallback")
+            return self._use_websocket_fallback()
+
+    def _use_websocket_fallback(self):
+        """
+        Fallback method to use WebSocket tick data when Historical API fails.
+        """
+        if len(self.candle_data) > 0:
+            # Calculate high/low from collected tick data
+            prices = [tick['price'] for tick in self.candle_data]
+            self.entry_candle_high = max(prices)
+            self.entry_candle_low = min(prices)
+
+            logger.info(f"Using WebSocket fallback - High: {self.entry_candle_high}, Low: {self.entry_candle_low} (from {len(self.candle_data)} ticks)")
+            print(f"✓ Entry Candle (WebSocket): High = {self.entry_candle_high:,.2f} | Low = {self.entry_candle_low:,.2f}")
+            print(f"  (Calculated from {len(self.candle_data)} tick updates)")
+            return True
+        else:
+            logger.error("No WebSocket tick data available for fallback")
+            print("✗ No tick data available for fallback")
             return False
 
     def _get_capital_from_user(self):
@@ -538,8 +556,13 @@ class Strategy:
                 # Error fetching data, return to idle
                 logger.error("Failed to fetch previous candle data, returning to IDLE")
                 print("\n✗ Failed to fetch previous candle data")
-                print("  Returning to IDLE state...")
-                time.sleep(3)
+                print("  The Historical Data API may be unavailable")
+                print("  Suggestions:")
+                print("    1. Check your internet connection")
+                print("    2. Try choosing 'Current Candle' instead (uses live WebSocket data)")
+                print("    3. Wait a minute and try again")
+                print("\n  Returning to IDLE state...")
+                time.sleep(5)
                 self.state = TradingState.IDLE
 
     def _handle_waiting_candle_close(self):
@@ -549,7 +572,17 @@ class Strategy:
 
         if now >= self.entry_candle_close_time:
             # Candle closed, fetch historical data using the extracted method
-            self._fetch_entry_candle_data()
+            success = self._fetch_entry_candle_data()
+
+            if not success or self.entry_candle_high is None or self.entry_candle_low is None:
+                logger.error("Failed to fetch entry candle data, returning to IDLE state")
+                print("\n\n❌ Failed to fetch entry candle data")
+                print("   Please try again or check your connection")
+                time.sleep(3)
+                self.state = TradingState.IDLE
+                self.entry_candle_choice = None
+                self.chosen_direction = None
+                return
 
             logger.info(f"Entry candle closed at {now.strftime('%H:%M:%S')} - High: {self.entry_candle_high}, Low: {self.entry_candle_low}")
 
@@ -884,16 +917,15 @@ class Strategy:
             new_sl = float(new_sl_str)
 
             # Validate new SL
-            if direction == 'CALL':
-                if new_sl >= current_price:
-                    print(f"✗ Invalid: CALL stop loss must be BELOW current price ({current_price:.2f})")
-                    time.sleep(3)
-                    return
-            else:  # PUT
-                if new_sl <= current_price:
-                    print(f"✗ Invalid: PUT stop loss must be ABOVE current price ({current_price:.2f})")
-                    time.sleep(3)
-                    return
+            # NOTE: We are BUYING options (long position), so:
+            # - For both CALL and PUT: SL should be BELOW current price
+            # - If option price drops to SL, we exit with loss
+            # - If option price rises, we make profit
+            if new_sl >= current_price:
+                print(f"✗ Invalid: Stop loss must be BELOW current price ({current_price:.2f})")
+                print(f"   (You're buying the option - SL protects against price drop)")
+                time.sleep(3)
+                return
 
             # Thread-safe update of SL
             with self.position_lock:

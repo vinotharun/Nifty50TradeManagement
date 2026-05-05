@@ -63,17 +63,28 @@ class Dashboard:
     def show_entry_candle(high: float, low: float):
         """
         Display entry candle details.
-        
+
         Args:
             high: Entry candle high
             low: Entry candle low
         """
+        # Safety check for None values
+        if high is None or low is None:
+            console.print()
+            console.print(Panel(
+                "[red]❌ Error: Entry candle data is unavailable[/red]",
+                title="⚠️  Data Error",
+                border_style="red"
+            ))
+            console.print()
+            return
+
         table = Table(show_header=True, header_style="bold magenta", border_style="magenta")
         table.add_column("Entry Candle High", justify="right", style="green")
         table.add_column("Entry Candle Low", justify="right", style="red")
-        
+
         table.add_row(f"{high:.2f}", f"{low:.2f}")
-        
+
         console.print()
         console.print(Panel(table, title="📌 Entry Candle Set", border_style="magenta"))
         console.print("⏳ Waiting for breakout...", style="yellow")

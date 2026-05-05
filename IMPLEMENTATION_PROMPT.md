@@ -110,8 +110,20 @@ Enter your choice (1/2): _
 - **Fetch complete candle data** using Kite Connect **Historical Data API** to ensure accurate High/Low
   - This captures price action from the entire candle
   - Example: If using 10:30-10:31 candle, API captures all ticks including before user action
+  - **Note**: Do NOT pass `timeout` parameter to `historical_data()` - not supported by KiteConnect library
 - Record the **High** and **Low** of the completed Entry Candle
 - Display Entry Candle details: `High: XXXXX.XX | Low: XXXXX.XX`
+
+**Error Handling & Fallback:**
+- If Historical API fails, implement fallback to WebSocket tick data:
+  - **For Current Candle**: Calculate High/Low from collected WebSocket ticks
+  - **For Previous Candle**: No fallback available - must return to IDLE state
+- Always validate data before proceeding:
+  ```python
+  if entry_candle_high is None or entry_candle_low is None:
+      # Return to IDLE, show error message
+  ```
+- Handle API failures gracefully with helpful error messages
 
 ### 3. Breakout Monitoring (Directional)
 Monitor live WebSocket ticks for breakout **ONLY in the chosen direction**:
@@ -151,25 +163,52 @@ Monitor live WebSocket ticks for breakout **ONLY in the chosen direction**:
 - **Fallback**: If all options expire today (unlikely edge case), use nearest expiry
 - Use Kite Connect's **instrument lookup/search API** to get exact trading symbols (e.g., `NIFTY26MAY23500CE`)
 
+**Important: Handle Different Date Types**
+- KiteConnect API may return `option['expiry']` as either:
+  - `datetime.datetime` object (has `.date()` method)
+  - `datetime.date` object (already a date, no `.date()` method)
+- Always check type before calling `.date()`:
+  ```python
+  option_expiry = option['expiry']
+  if hasattr(option_expiry, 'date'):
+      option_expiry_date = option_expiry.date()  # datetime object
+  else:
+      option_expiry_date = option_expiry  # already date object
+  ```
+
 #### Trade Execution Logic
+
+**Order Type: LIMIT Orders (Not Market)**
+- Zerodha API does not allow pure market orders via API for risk protection
+- Use **LIMIT orders with 2% buffer** for immediate execution:
+  - **BUY**: Limit price = LTP × 1.02 (2% above last traded price)
+  - **SELL**: Limit price = LTP × 0.98 (2% below last traded price)
+- This ensures immediate execution while complying with API restrictions
+- Typical slippage: 0.5-1% (acceptable for this strategy)
 
 **For Path 1 (Call Option):**
 ```
-Instrument: Buy ATM Call Option (market order)
+1. Get current option LTP (Last Traded Price)
+2. Calculate limit price = LTP × 1.02
+3. Place LIMIT BUY order at calculated price
 Stop Loss (SL) Price = Entry Candle Low - 1
 Risk Points = Entry Price - SL Price
 ```
 
 **For Path 2 (Put Option):**
 ```
-Instrument: Buy ATM Put Option (market order)
+1. Get current option LTP (Last Traded Price)
+2. Calculate limit price = LTP × 1.02
+3. Place LIMIT BUY order at calculated price
 Stop Loss (SL) Price = Entry Candle High + 1
 Risk Points = SL Price - Entry Price
 ```
 
-**Important**: 
+**Important**:
 - "Entry Price" = **Option premium price** at which the order is filled
 - "Risk Points" calculation uses the **option premium**, not the underlying index
+- Use `kite.quote()` to get current LTP before placing order
+- Round limit price to 1 decimal place for options pricing
 
 #### Position Sizing (Based on Risk Points and Capital)
 **Base Position Sizing (for ₹1,00,000 capital):**
@@ -295,12 +334,21 @@ P&L (Unrealized): ₹ +XXXX.XX / -XXXX.XX
   - Direction (CALL/PUT)
 - User enters new SL price (or ENTER to cancel)
 - **Validation**:
-  - For CALL: New SL must be **below** current price
-  - For PUT: New SL must be **above** current price
+  - **IMPORTANT**: We are BUYING options (LONG position) for both CALL and PUT
+  - New SL must be **below** current price (for both CALL and PUT)
+  - This protects against option premium dropping
+  - When option price rises → profit; when it falls → loss (regardless of CALL/PUT)
+  - Common use case: Trailing stop loss to lock in profits
   - Display error if invalid, allow retry
-- Update `self.position['stop_loss']` immediately
+- Update `self.position['stop_loss']` immediately (with thread lock)
 - Display confirmation: "✓ Stop Loss updated: ₹X → ₹Y"
 - Return to position monitoring dashboard
+
+**Conceptual Note:**
+- Direction (CALL/PUT) affects which strike we select and when breakout triggers
+- Direction does NOT affect option P&L behavior: we're always LONG the option
+- For LONG positions: Option price UP = profit, DOWN = loss
+- Therefore: Stop loss is always BELOW current price (same for CALL and PUT)
 
 ### Manual Target Modification (During Active Position)
 - User types **'T'** and presses **ENTER** → Opens Target modification dialog
@@ -372,6 +420,11 @@ Record all entries in a trading journal for later analysis. It should be in a sp
   3. User pastes token back into terminal
   4. Generate and store access token
 - Handle daily session expiry with automatic re-authentication prompt
+- **IP Whitelist Requirement**: Add your IP address to Kite Developer Console
+  - Go to https://developers.kite.trade/
+  - Open your app settings
+  - Add allowed IPs under "Allowed IPs" section
+  - Required for API calls to work
 
 ### 2. Data Streaming
 - Use **Kite Connect WebSocket (KiteTicker)** for:
@@ -827,6 +880,9 @@ except Exception as e:
 3. **Position Tracking** - Always protected by `position_lock`
 4. **WebSocket Reconnection** - Handle gracefully, re-subscribe
 5. **Journal Logging** - File I/O could fail, wrap in try/except
+6. **Historical API Calls** - May return None or empty data, always validate
+7. **Date Type Handling** - Check if expiry is datetime or date object before calling .date()
+8. **Dashboard Display** - Always check for None values before formatting
 
 **Pre-Order Checklist:**
 - ✅ Margin verified
@@ -834,6 +890,16 @@ except Exception as e:
 - ✅ Symbol verified
 - ✅ Quantity calculated correctly
 - ✅ Late entry warning shown (if after 3 PM)
+- ✅ LTP fetched for limit price calculation
+- ✅ Limit price calculated (LTP ± 2%)
+
+**Common API Gotchas:**
+1. **historical_data()** - Does NOT accept `timeout` parameter
+2. **Market orders** - NOT allowed via API, use LIMIT orders
+3. **Date objects** - May be datetime.datetime OR datetime.date
+4. **IP Whitelist** - Must add IP to Kite Developer Console
+5. **None values** - Always check before formatting (e.g., `f"{value:.2f}"` fails if value is None)
+6. **Stop Loss validation** - We're LONG options (buying), so SL < current price for BOTH CALL and PUT
 
 ---
 
@@ -911,7 +977,7 @@ MAX_CAPITAL = 100000000           # Maximum ₹10 crores
 MAX_LOTS_PER_ORDER = 100          # Max lots per order
 
 # API & Network
-API_TIMEOUT = 30                  # Timeout in seconds
+API_TIMEOUT = 30                  # Note: KiteConnect handles timeout internally
 API_MAX_RETRIES = 3               # Retry attempts
 WS_MAX_RETRIES = 5                # WebSocket reconnection
 
@@ -919,6 +985,148 @@ WS_MAX_RETRIES = 5                # WebSocket reconnection
 NIFTY_LOT_SIZE = 65               # Current lot size
 MARKET_START_TIME = time(9, 15)   # Market hours
 EOD_CLOSE_TIME = time(15, 15)     # Auto-close time
+```
+
+---
+
+## Common Issues & Troubleshooting
+
+### Issue 1: "Market orders not allowed via API"
+**Error:** `Market orders without market protection are not allowed via API`
+
+**Solution:** Use LIMIT orders with 2% buffer
+```python
+# Get LTP
+quote = kite.quote(f"NFO:{trading_symbol}")
+ltp = quote[f"NFO:{trading_symbol}"]["last_price"]
+
+# Calculate limit price
+if transaction_type == "BUY":
+    limit_price = round(ltp * 1.02, 1)  # 2% above
+else:
+    limit_price = round(ltp * 0.98, 1)  # 2% below
+
+# Place limit order
+kite.place_order(..., order_type=kite.ORDER_TYPE_LIMIT, price=limit_price)
+```
+
+---
+
+### Issue 2: "No IPs configured for this app"
+**Error:** `No IPs configured for this app. Add allowed IPs on Kite developer console`
+
+**Solution:**
+1. Go to https://developers.kite.trade/
+2. Open your app settings
+3. Add your IP to "Allowed IPs"
+4. Wait 1-2 minutes for propagation
+5. Restart trading system
+
+---
+
+### Issue 3: "unsupported format string passed to NoneType"
+**Error:** `TypeError: unsupported format string passed to NoneType.__format__`
+
+**Solution:** Always validate data before formatting
+```python
+# Bad
+print(f"{value:.2f}")  # Crashes if value is None
+
+# Good
+if value is None:
+    print("Data unavailable")
+    return
+print(f"{value:.2f}")
+```
+
+---
+
+### Issue 4: "datetime.date object has no attribute 'date'"
+**Error:** `AttributeError: 'datetime.date' object has no attribute 'date'`
+
+**Solution:** Check type before calling .date()
+```python
+# Handle both datetime and date objects
+if hasattr(option_expiry, 'date'):
+    option_expiry_date = option_expiry.date()
+else:
+    option_expiry_date = option_expiry
+```
+
+---
+
+### Issue 5: "historical_data() got unexpected keyword 'timeout'"
+**Error:** `TypeError: historical_data() got an unexpected keyword argument 'timeout'`
+
+**Solution:** Don't pass timeout parameter
+```python
+# Wrong
+data = kite.historical_data(..., timeout=30)
+
+# Correct
+data = kite.historical_data(...)  # Library handles timeout internally
+```
+
+---
+
+### Issue 6: Historical API returns no data
+**Error:** Empty list or None from `historical_data()`
+
+**Solution:** Implement WebSocket fallback
+```python
+try:
+    data = kite.historical_data(...)
+    if not data or len(data) == 0:
+        # Use WebSocket fallback
+        high = max([tick['price'] for tick in self.candle_data])
+        low = min([tick['price'] for tick in self.candle_data])
+except Exception as e:
+    logger.error(f"Historical API failed: {e}")
+    # Fallback or return to IDLE
+```
+
+---
+
+### Issue 7: "PUT stop loss must be ABOVE current price" (Invalid validation)
+**Error:** `✗ Invalid: PUT stop loss must be ABOVE current price`
+
+**Problem:** When trying to set stop loss below current price for PUT option
+
+**Root Cause:** Misunderstanding of option trading - we're BUYING options (LONG position)
+
+**Solution:** Stop loss must be BELOW current price for BOTH CALL and PUT
+```python
+# WRONG - Different validation for CALL and PUT
+if direction == 'CALL':
+    if new_sl >= current_price:
+        return "Invalid"
+else:  # PUT
+    if new_sl <= current_price:  # ❌ WRONG!
+        return "Invalid"
+
+# CORRECT - Same validation for both (we're LONG the option)
+# For LONG positions: option price UP = profit, DOWN = loss
+# Stop loss protects against price drop (regardless of CALL/PUT)
+if new_sl >= current_price:
+    print("Stop loss must be BELOW current price")
+    print("(You're buying the option - SL protects against price drop)")
+    return
+```
+
+**Key Understanding:**
+- We BUY options (both CALL and PUT) - we're LONG
+- When option premium rises → profit
+- When option premium falls → loss
+- Stop loss: exit if premium drops to this level
+- Direction (CALL/PUT) affects strike selection, NOT how P&L works
+
+**Example:**
+```
+PUT Option: NIFTY23500PE
+Entry: ₹180
+Current: ₹241.65 (in profit!)
+Setting SL: ₹233 (trail stop to lock profit)
+Validation: ✅ PASS (233 < 241.65)
 ```
 
 ---
@@ -931,3 +1139,8 @@ EOD_CLOSE_TIME = time(15, 15)     # Auto-close time
 - **Thread safety is non-negotiable** - all shared state must use locks
 - **Validate all inputs** - never trust user input or API responses
 - **Log everything** - debugging production issues requires good logs
+- **Always check for None** - format strings crash on None values
+- **Use LIMIT orders** - Market orders not allowed via API
+- **Handle date types** - API may return datetime.datetime OR datetime.date
+- **LONG position logic** - We BUY options, so SL < current price for BOTH CALL and PUT
+- **Don't confuse direction with position** - Direction affects strike selection, not P&L behavior
