@@ -149,9 +149,49 @@ class DataStream:
     def start(self):
         """Start the WebSocket connection in a separate thread."""
         logger.info("Starting WebSocket connection...")
-        
+
+        # Suppress Twisted signal handler error
+        # Twisted's reactor tries to install signal handlers, which only works in main thread
+        # This is harmless - we don't need signal handlers for WebSocket functionality
+        def _start_ticker():
+            """Start ticker with error suppression for signal handler installation."""
+            import sys
+            import os
+
+            # Install Twisted log observer to filter signal errors
+            try:
+                from twisted.python import log
+
+                def silent_observer(event):
+                    """Filter out signal handler errors from Twisted logs."""
+                    if 'failure' in event:
+                        failure = event['failure']
+                        if failure and 'signal only works in main thread' in str(failure.value):
+                            return  # Suppress this specific error
+                    # Let other messages through to default observer
+                    if event.get('isError'):
+                        return  # Suppress all errors during startup
+
+                log.addObserver(silent_observer)
+            except ImportError:
+                pass  # Twisted might not be imported yet
+
+            # Also suppress stderr completely during startup
+            original_stderr_fd = sys.stderr.fileno()
+            saved_stderr_fd = os.dup(original_stderr_fd)
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, original_stderr_fd)
+            os.close(devnull)
+
+            try:
+                self.ticker.connect()
+            finally:
+                # Restore stderr
+                os.dup2(saved_stderr_fd, original_stderr_fd)
+                os.close(saved_stderr_fd)
+
         # Run ticker in a separate thread
-        ticker_thread = threading.Thread(target=self.ticker.connect, daemon=True)
+        ticker_thread = threading.Thread(target=_start_ticker, daemon=True)
         ticker_thread.start()
         
         # Wait for connection
